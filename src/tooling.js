@@ -39,13 +39,14 @@ export async function projectConfig(entry = 'game.ts', options = {}) {
     throw new Error('Output must be a separate directory inside the project, away from the game source, public, node_modules, and .git.');
   }
   return {
-    root, configFile: false, base: './', publicDir: resolve(root, 'public'),
+    root, configFile: false, base: './', publicDir: resolve(root, 'public'), logLevel: options.logLevel ?? 'info',
     appType: 'spa',
     resolve: {
       // Also supports working on Meshpad's own example without installing itself.
       alias: [
         { find: /^meshpad$/, replacement: resolve(packageRoot, 'index.js') },
         { find: /^meshpad\/three$/, replacement: resolve(packageRoot, 'src/three.js') },
+        { find: /^meshpad\/addons$/, replacement: resolve(packageRoot, 'src/addons.js') },
       ],
       dedupe: ['three'],
     },

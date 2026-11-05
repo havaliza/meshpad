@@ -36,7 +36,9 @@ export function createGame(options = {}) {
   stage.append(renderer.domElement);
   if (options.title) document.title = options.title;
 
-  const capture = new URLSearchParams(location.search).has('__meshpad_capture');
+  const params = new URLSearchParams(location.search);
+  const capture = params.has('__meshpad_capture');
+  const captureDpr = capture ? Number(params.get('__meshpad_dpr')) : 0;
   const lifetime = new AbortController();
   const listen = (target, type, handler, extra = {}) => target.addEventListener(type, handler, { ...extra, signal: lifetime.signal });
   let current;
@@ -57,7 +59,7 @@ export function createGame(options = {}) {
     previous: () => invoke(() => game.previous()), next: () => invoke(() => game.next()),
     restart: () => invoke(() => game.restart()),
   });
-  const isCurrent = (session) => !disposed && current === session && !session.controller.signal.aborted;
+  const isCurrent = (session) => Boolean(session) && !disposed && current === session && !session.controller.signal.aborted;
   const report = (error, session = current) => {
     if (!isCurrent(session)) return;
     lastError = error instanceof Error ? error : new Error(String(error));
@@ -67,7 +69,12 @@ export function createGame(options = {}) {
     options.onError?.(lastError);
   };
   const draw = () => {
-    if (current && !contextLost && !disposed) renderer.render(current.scene, current.camera);
+    if (current?.hooks && !contextLost && !disposed) {
+      try {
+        current.hooks.beforeRender?.();
+        renderer.render(current.scene, current.camera);
+      } catch (error) { report(error); }
+    }
   };
   const advance = (dt) => {
     if (status !== 'playing') return;
@@ -82,7 +89,7 @@ export function createGame(options = {}) {
     const dt = previousTime == null ? 0 : Math.min((time - previousTime) / 1000, 0.05);
     previousTime = time;
     advance(dt);
-    try { draw(); } catch (error) { report(error); }
+    draw();
     if (shouldRun()) frame = requestAnimationFrame(tick);
   };
   const startLoop = () => { if (!frame && shouldRun()) frame = requestAnimationFrame(tick); };
@@ -108,11 +115,13 @@ export function createGame(options = {}) {
       root.style.left = `${viewport?.offsetLeft ?? 0}px`;
     }
     stage.style.width = `${width}px`;
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, maxPixelRatio));
+    renderer.setPixelRatio(captureDpr > 0 && captureDpr <= 4 ? captureDpr : Math.min(window.devicePixelRatio || 1, maxPixelRatio));
     renderer.setSize(width, height, false);
     if (current) {
-      if (current.camera.isPerspectiveCamera) current.camera.aspect = width / height;
-      current.camera.updateProjectionMatrix();
+      if (current.autoResizeCamera && current.camera.isPerspectiveCamera) {
+        current.camera.aspect = width / height;
+        current.camera.updateProjectionMatrix();
+      }
       try { current.hooks?.resize?.(width, height); draw(); } catch (error) { report(error); }
     }
   };
@@ -144,7 +153,7 @@ export function createGame(options = {}) {
     const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 200);
     camera.position.set(5, 6, 9);
     camera.lookAt(0, 0, 0);
-    const session = { index, scene, camera, controller: new AbortController(), hooks: null };
+    const session = { index, scene, camera, autoResizeCamera: true, controller: new AbortController(), hooks: null };
     current = session;
     status = 'loading'; elapsed = 0; lastError = null;
     hud.reset(index);
@@ -162,9 +171,10 @@ export function createGame(options = {}) {
         cleanup(session);
         return false;
       }
+      session.camera = session.hooks.camera ?? camera;
+      session.autoResizeCamera = session.hooks.autoResizeCamera ?? !session.hooks.camera;
       status = manuallyPaused ? 'paused' : 'playing';
       resize();
-      draw();
       startLoop();
       return true;
     } catch (error) {
@@ -179,10 +189,11 @@ export function createGame(options = {}) {
     get scene() { return current?.scene; },
     get camera() { return current?.camera; },
     get state() { return Object.freeze({ status, index: current?.index ?? initial, elapsed, error: lastError }); },
+    debug: () => isCurrent(current) ? current.hooks?.debug?.() ?? null : null,
     loadLevel,
-    restart: () => loadLevel(current.index),
-    next: () => loadLevel(Math.min(current.index + 1, levels.length - 1)),
-    previous: () => loadLevel(Math.max(current.index - 1, 0)),
+    restart: () => loadLevel(current?.index ?? initial),
+    next: () => loadLevel(Math.min((current?.index ?? initial) + 1, levels.length - 1)),
+    previous: () => loadLevel(Math.max((current?.index ?? initial) - 1, 0)),
     win: () => finish(current, 'won'),
     fail: () => finish(current, 'failed'),
     pause() { manuallyPaused = true; if (status === 'playing') status = 'paused'; stopLoop(); },
@@ -237,7 +248,9 @@ export function createGame(options = {}) {
   resize();
   // The capture tool uses the same runtime and setup code as the interactive game.
   window.__MESHPAD__ = game;
-  game.ready = loadLevel(initial);
+  // Let the entry module finish initializing classes and constants. Explicit loads
+  // or disposal before this microtask supersede the deferred initial load.
+  game.ready = Promise.resolve().then(() => !disposed && generation === 0 ? loadLevel(initial) : false);
   game.ready.catch(() => {});
   return game;
 }

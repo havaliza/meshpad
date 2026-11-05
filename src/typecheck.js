@@ -47,6 +47,7 @@ export async function checkProject(entry, options = {}) {
       ...parsed.options.paths,
       meshpad: [resolve(packageRoot, 'index.d.ts')],
       'meshpad/three': [resolve(packageRoot, 'three.d.ts')],
+      'meshpad/addons': [resolve(packageRoot, 'addons.d.ts')],
     },
   };
   const program = ts.createProgram({ rootNames: [...new Set([...parsed.fileNames, source])], options: compilerOptions });

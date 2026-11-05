@@ -8,6 +8,7 @@
   "exports": {
     ".": { "types": "./index.d.ts", "import": "./index.js" },
     "./three": { "types": "./three.d.ts", "import": "./src/three.js" },
+    "./addons": { "types": "./addons.d.ts", "import": "./src/addons.js" },
     "./package.json": "./package.json",
     "./tsconfig": "./tsconfig.json"
   },
@@ -31,7 +32,7 @@
   },
   "sideEffects": ["./index.js", "**/*.css"],
   "files": [
-    "index.js", "index.d.ts", "three.d.ts", "tsconfig.json", "src", "bin", "templates"
+    "index.js", "index.d.ts", "three.d.ts", "addons.d.ts", "tsconfig.json", "src", "bin", "templates"
   ],
   "repository": {
     "type": "git",

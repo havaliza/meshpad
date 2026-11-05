@@ -12,8 +12,16 @@ export interface GamePointer {
 }
 
 export interface LevelHooks {
+  /** Replace the default camera. Custom cameras own their projection by default. */
+  camera?: Three.Camera;
+  /** Automatically update a perspective camera's aspect on resize. */
+  autoResizeCamera?: boolean;
   /** Seconds since the last frame and since this level started. */
   update?(dt: number, elapsed: number): void;
+  /** Runs immediately before every draw, including resize and step(0). */
+  beforeRender?(): void;
+  /** Return JSON-serializable state for inspection and headless captures. */
+  debug?(): unknown;
   pointer?(event: GamePointer): void;
   /** Use to update an orthographic camera or custom layout. */
   resize?(width: number, height: number): void;
@@ -66,11 +74,13 @@ export interface GameState {
 
 export interface Game {
   readonly renderer: Three.WebGLRenderer;
-  readonly scene: Three.Scene;
-  readonly camera: Three.PerspectiveCamera;
+  readonly scene: Three.Scene | undefined;
+  readonly camera: Three.Camera | undefined;
   readonly state: GameState;
-  /** Rejects on initial setup failure. */
+  /** Initial setup starts in a microtask. Rejects on setup failure. */
   ready: Promise<boolean>;
+  /** Current level's debug snapshot, or null when no debug hook is available. */
+  debug(): unknown;
   /** Resolves false if superseded by another load or disposal. */
   loadLevel(index: number): Promise<boolean>;
   restart(): Promise<boolean>;

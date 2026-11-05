@@ -137,3 +137,33 @@ test('CLI reports invalid commands and flags with a nonzero exit code', async ()
   const { stdout } = await exec(process.execPath, [resolve(packageRoot, 'bin/meshpad.js'), '--help']);
   assert.match(stdout, /meshpad render/);
 });
+
+test('script validation rejects malformed steps before starting a game', async () => {
+  const { validateSteps } = await import('../src/capture.js');
+  for (const script of [{}, [null], [{ type: 'drag' }], [{ type: 'pointerdown', world: [1, 2] }], [{ type: 'pointermove', world: [0, NaN, 0] }], [{ type: 'advance', seconds: 61 }], [{ type: 'screenshot', output: 'bad.jpg' }], [{ type: 'state', label: 2 }]]) {
+    assert.throws(() => validateSteps(script), /Script/);
+  }
+  assert.deepEqual(validateSteps([{ type: 'pointerup' }, { type: 'state' }]), [{ type: 'pointerup' }, { type: 'state' }]);
+  await assert.rejects(captureGame('missing.ts', { dpr: 0 }), /dpr/);
+  await assert.rejects(captureGame('missing.ts', { dpr: 5 }), /dpr/);
+  await assert.rejects(exec(process.execPath, [resolve(packageRoot, 'bin/meshpad.js'), 'play']), /requires --script/);
+});
+
+test('add-ons typecheck and build in a single dependency project', async (t) => {
+  const root = await temporary(t);
+  await initProject(root);
+  await mkdir(resolve(root, 'node_modules'));
+  await symlink(packageRoot, resolve(root, 'node_modules/meshpad'), 'dir');
+  await writeFile(resolve(root, 'game.ts'), `
+    import { createGame, THREE } from 'meshpad';
+    import { BufferGeometryUtils, OrbitControls } from 'meshpad/addons';
+    createGame({ levels: [{ setup({ scene, camera, renderer }) {
+      const controls = new OrbitControls(camera, renderer.domElement);
+      scene.add(new THREE.Mesh(BufferGeometryUtils.mergeVertices(new THREE.BoxGeometry())));
+      return { beforeRender() { controls.update(); }, debug: () => ({ ok: true }), dispose() { controls.dispose(); } };
+    } }] });
+  `);
+  await buildProject(undefined, { root, logLevel: 'error' });
+  const { stdout } = await exec(process.execPath, ['--input-type=module', '-e', "console.log(import.meta.resolve('meshpad/addons'));"], { cwd: root });
+  assert.match(stdout.trim(), /src\/addons\.js$/);
+});

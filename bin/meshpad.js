@@ -16,6 +16,8 @@ Usage:
   meshpad preview                  Serve a production build locally
   meshpad browsers [--with-deps]    Install Chromium for rendering
   meshpad render [game.ts]          Type check and render to PNG + JSON
+  meshpad play [game.ts] --script <steps.json>
+                                   Run scripted input; print capture JSON
 
 Options:
   --host <host>                    Dev/preview host (default: 127.0.0.1)
@@ -24,6 +26,9 @@ Options:
   --output, -o <path.png>           Render output (default: renders/game.png)
   --width <pixels>                 Render viewport width (default: 390)
   --height <pixels>                Render viewport height (default: 844)
+  --dpr <number>                   Capture pixel ratio, 0.25–4 (default: 1)
+  --script <steps.json>            Pointer, advance, screenshot, and state steps
+  --json                          Print render result as JSON (play default)
   --level <number>                 Render level, starting at 1
   --time <seconds>                 Advance simulation before capture (0–60)
   --timeout <milliseconds>         Render setup timeout (default: 30000)
@@ -40,6 +45,7 @@ try {
       host: { type: 'string' }, port: { type: 'string' }, 'out-dir': { type: 'string' },
       output: { type: 'string', short: 'o' }, width: { type: 'string' }, height: { type: 'string' },
       level: { type: 'string' }, time: { type: 'string' }, timeout: { type: 'string' },
+      dpr: { type: 'string' }, script: { type: 'string' }, json: { type: 'boolean' },
       'scene-only': { type: 'boolean' }, 'with-deps': { type: 'boolean' },
     },
   });
@@ -82,12 +88,14 @@ try {
         process.exitCode = await new Promise((resolve, reject) => { child.on('error', reject); child.on('exit', (code) => resolve(code ?? 1)); });
         break;
       }
-      case 'render': {
+      case 'render': case 'play': {
+        if (command === 'play' && !values.script) throw new Error('play requires --script <steps.json>.');
         const { captureGame } = await import('../src/capture.js');
-        const renderOptions = { output: values.output, sceneOnly: values['scene-only'] };
-        for (const name of ['width', 'height', 'level', 'time', 'timeout']) if (values[name] != null) renderOptions[name] = Number(values[name]);
+        const renderOptions = { output: values.output, sceneOnly: values['scene-only'], script: values.script };
+        for (const name of ['width', 'height', 'level', 'time', 'timeout', 'dpr']) if (values[name] != null) renderOptions[name] = Number(values[name]);
         const result = await captureGame(entry, renderOptions);
-        console.log(`Rendered level ${result.level} → ${result.output}\n${result.three.calls} draw calls · ${result.three.triangles} triangles`);
+        if (command === 'play' || values.json) console.log(JSON.stringify(result, null, 2));
+        else console.log(`Rendered level ${result.level} → ${result.output}\n${result.three.calls} draw calls · ${result.three.triangles} triangles`);
         break;
       }
       default: throw new Error(`Unknown command: ${command}. Run "meshpad --help".`);

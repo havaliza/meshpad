@@ -49,6 +49,7 @@ function createLevel(
   let spin = 0;
 
   return {
+    debug: () => ({ taps, target, timeLeft }),
     update(dt, elapsed) {
       timeLeft = Math.max(0, timeLeft - dt);
       cube.rotation.y += dt * (0.3 + spin);

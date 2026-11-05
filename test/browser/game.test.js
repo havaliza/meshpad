@@ -112,6 +112,8 @@ test('async setup races cannot update or retain the replacement level', async (t
       } },
       { name: 'Fast', setup() {} },
     ] });
+    // Allow the deferred initial setup to start before superseding it.
+    await Promise.resolve();
     await game.loadLevel(1);
     unblock();
     const oldResult = await game.ready;
@@ -214,4 +216,130 @@ test('dev reports type errors after edits and recovers when they are fixed', asy
   assert.match(await page.locator('vite-error-overlay .message').textContent(), /TypeScript check failed/);
   await writeFile(resolve(root, 'game.ts'), valid);
   await page.waitForFunction(() => !document.querySelector('vite-error-overlay') && window.__MESHPAD__?.state.status === 'playing');
+});
+
+test('initial setup is deferred and early loads or disposal supersede it', async (t) => {
+  const page = await pageFor(t);
+  const result = await page.evaluate(async () => {
+    const calls = [];
+    const game = window.fixture.createGame({ levels: [
+      { setup() { calls.push(new Later().value); } },
+      { setup() { calls.push('replacement'); } },
+    ] });
+    const before = game.state.status;
+    class Later { value = 'ready'; }
+    await game.ready;
+    game.dispose();
+    const replacement = window.fixture.createGame({ levels: [
+      { setup() { calls.push('should not load'); } },
+      { setup() { calls.push('replacement'); } },
+    ] });
+    await replacement.loadLevel(1);
+    const superseded = await replacement.ready;
+    replacement.dispose();
+    const disposed = window.fixture.createGame({ levels: [{ setup() { calls.push('disposed'); } }] });
+    disposed.dispose();
+    return { before, calls, superseded, disposedReady: await disposed.ready };
+  });
+  assert.deepEqual(result, { before: 'loading', calls: ['ready', 'replacement'], superseded: false, disposedReady: false });
+});
+
+test('custom and manually managed projections survive resizing; prepasses run before every draw', async (t) => {
+  const page = await pageFor(t);
+  await page.evaluate(async () => {
+    const { createGame, THREE } = window.fixture;
+    window.draws = [];
+    window.prepared = false;
+    window.game = createGame({ levels: [
+      { setup({ renderer }) {
+        const camera = new THREE.OrthographicCamera(-2, 2, 4, -4, 0.1, 100);
+        camera.position.z = 10;
+        camera.projectionMatrix.elements[8] = 0.25; // Oblique projection.
+        camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
+        const render = renderer.render.bind(renderer);
+        renderer.render = (...args) => {
+          window.draws.push(window.prepared);
+          window.prepared = false;
+          render(...args);
+        };
+        return { camera, beforeRender() { window.prepared = true; }, debug: () => ({ custom: true }) };
+      } },
+      { setup({ camera }) {
+        camera.projectionMatrix.elements[8] = 0.4;
+        camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
+        return { autoResizeCamera: false, beforeRender() { window.prepared = true; } };
+      } },
+      { setup() { return { beforeRender() { throw new Error('prepass broke'); } }; } },
+    ] });
+    await window.game.ready;
+    window.projection = window.game.camera.projectionMatrix.toArray();
+    window.game.step(0);
+  });
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.waitForFunction(() => window.game.renderer.domElement.height === 780);
+  assert.equal(await page.evaluate(() => JSON.stringify(window.projection) === JSON.stringify(window.game.camera.projectionMatrix.toArray())), true);
+  assert.deepEqual(await page.evaluate(() => window.game.debug()), { custom: true });
+  await page.evaluate(async () => {
+    await window.game.loadLevel(1);
+    window.projection = window.game.camera.projectionMatrix.toArray();
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForFunction(() => window.game.renderer.domElement.height === 1688);
+  assert.equal(await page.evaluate(() => JSON.stringify(window.projection) === JSON.stringify(window.game.camera.projectionMatrix.toArray())), true);
+  assert.equal(await page.evaluate(() => window.draws.length >= 5 && window.draws.every(Boolean)), true);
+  assert.equal(await page.evaluate(() => window.game.debug()), null);
+  await page.evaluate(() => window.game.loadLevel(2));
+  assert.equal(await page.evaluate(() => window.game.state.status), 'error');
+  assert.equal(await page.getByRole('dialog').isVisible(), true);
+  await page.evaluate(() => window.game.dispose());
+});
+
+test('play CLI drags at world positions, records debug snapshots, and captures at requested DPR', async (t) => {
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const root = await mkdtemp(resolve(tmpdir(), 'meshpad-play-test-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const script = resolve(root, 'steps.json');
+  await writeFile(script, JSON.stringify([
+    { type: 'pointerdown', world: [-1, 0, 0] },
+    { type: 'state', label: 'grabbed' },
+    { type: 'pointermove', world: [1, 0, 0] },
+    { type: 'advance', seconds: 0.5 },
+    { type: 'screenshot', output: 'dragging.png' },
+    { type: 'pointerup' },
+    { type: 'state', label: 'released' },
+  ]));
+  const output = resolve(root, 'final.png');
+  const { stdout } = await promisify(execFile)(process.execPath, [resolve(packageRoot, 'bin/meshpad.js'), 'play', 'test/fixtures/scripted.ts', '--script', script, '--level', '2', '--dpr', '2', '--output', output, '--scene-only'], { cwd: packageRoot });
+  const result = JSON.parse(stdout);
+  assert.equal(result.state.index, 1);
+  assert.equal(result.state.status, 'won');
+  assert.ok(Math.abs(result.state.elapsed - 0.5) < 1e-8);
+  assert.ok(Math.abs(result.debug.x - 1) < 0.02);
+  assert.equal(result.debug.dragging, false);
+  assert.ok(result.debug.events.includes('pointerdown'));
+  assert.equal(result.debug.events.at(-1), 'pointerup');
+  assert.equal(result.snapshots[0].label, 'grabbed');
+  assert.equal(result.snapshots[0].debug.dragging, true);
+  assert.equal(result.snapshots[1].debug.dragging, true);
+  assert.equal(result.snapshots[2].label, 'released');
+  for (const path of [output, resolve(root, 'dragging.png')]) {
+    const png = await readFile(path);
+    assert.equal(png.readUInt32BE(16), 780);
+    assert.equal(png.readUInt32BE(20), 1688);
+    assert.equal(JSON.parse(await readFile(path.slice(0, -4) + '.json')).dpr, 2);
+  }
+});
+
+test('headless failures report invalid debug snapshots and the offending script step', async (t) => {
+  const root = await mkdtemp(resolve(tmpdir(), 'meshpad-play-errors-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(resolve(root, 'game.ts'), `
+    import { createGame } from 'meshpad';
+    createGame({ levels: [{ setup() { return { debug: () => ({ value: 1n }) }; } }] });
+  `);
+  await assert.rejects(captureGame('game.ts', { root, output: resolve(root, 'bad-debug.png') }), /debug\(\) must return JSON-serializable state/);
+  const script = resolve(root, 'steps.json');
+  await writeFile(script, JSON.stringify([{ type: 'pointerdown', world: [0, 0, 20] }]));
+  await assert.rejects(captureGame('test/fixtures/scripted.ts', { script, output: resolve(root, 'bad-pointer.png') }), /Script step 1 \(pointerdown\).*outside the camera depth range/);
 });
