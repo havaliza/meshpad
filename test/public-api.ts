@@ -3,11 +3,10 @@ import { Vector3 } from 'meshpad/three';
 
 const level: Level = {
   name: 'Typed level',
-  async setup({ scene, camera, hud, signal, win }) {
+  async setup({ scene, camera, signal, win }) {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial());
     scene.add(mesh);
     camera.lookAt(new Vector3());
-    hud({ score: 0, progress: null });
     window.addEventListener('click', () => win(), { signal });
     return {
       update(dt, elapsed) { mesh.rotation.y += dt + elapsed * 0; },

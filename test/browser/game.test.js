@@ -44,38 +44,45 @@ test('mobile sizing, HUD navigation, results, retry, and final-level boundaries'
         const geometry = new THREE.BoxGeometry();
         geometry.addEventListener('dispose', () => window.disposals++);
         context.scene.add(new THREE.Mesh(geometry, new THREE.MeshBasicMaterial()));
-        context.hud({ score: 4, progress: 0.5, hint: 'Tap something' });
-        return { update(dt, elapsed) { if (elapsed > 1) context.fail('Too slow'); } };
+        return { update(dt, elapsed) { if (elapsed > 1) context.fail(); } };
       },
     })) });
     await window.game.ready;
   });
-  assert.equal(await page.locator('h1').textContent(), 'Stage 1');
-  assert.equal(await page.locator('progress').getAttribute('value'), '0.5');
+  assert.equal(await page.locator('h1').textContent(), 'Level 1');
+  assert.equal(await page.locator('.meshpad-bottom, select, progress, .meshpad-score, .meshpad-message, .meshpad-hint').count(), 0);
+  assert.equal(await page.locator('.meshpad-top button').count(), 2);
   assert.equal(await page.getByRole('button', { name: 'Previous level', exact: true }).isDisabled(), true);
   assert.deepEqual(await page.evaluate(() => ({ ratio: window.game.renderer.getPixelRatio(), width: window.game.renderer.domElement.width })), { ratio: 2, width: 780 });
-  assert.equal(await page.evaluate(() => window.game.win('Done')), true);
+  assert.equal(await page.evaluate(() => window.game.win()), true);
   assert.equal(await page.evaluate(() => window.game.fail()), false);
   assert.equal(await page.getByRole('dialog').isVisible(), true);
-  await page.getByRole('button', { name: 'Next level →' }).click();
+  assert.equal(await page.getByRole('dialog').getByRole('button').count(), 1);
+  assert.equal(await page.locator('.meshpad-primary').evaluate((element) => document.activeElement === element), true);
+  await page.keyboard.press('Tab');
+  assert.equal(await page.locator('.meshpad-primary').evaluate((element) => document.activeElement === element), true);
+  await page.getByRole('dialog').getByRole('button', { name: 'Next level', exact: true }).click();
   await page.waitForFunction(() => window.game.state.index === 1 && window.game.state.status === 'playing');
   assert.equal(await page.evaluate(() => window.disposals), 1);
   assert.equal(await page.evaluate(() => window.signals[0].aborted), true);
   assert.equal(await page.evaluate(() => window.callbacks[0].win()), false);
-  await page.evaluate(() => window.callbacks[0].hud({ title: 'stale' }));
-  assert.equal(await page.locator('h1').textContent(), 'Stage 2');
+  assert.equal(await page.locator('h1').textContent(), 'Level 2');
+  assert.equal(await page.getByRole('dialog').isVisible(), false);
+  assert.equal(await page.locator('.meshpad-top').evaluate((element) => element.contains(document.activeElement)), true);
   assert.equal(await page.getByRole('button', { name: 'Next level', exact: true }).isDisabled(), true);
   await page.evaluate(() => window.game.step(2));
   assert.equal(await page.evaluate(() => window.game.state.status), 'failed');
-  assert.equal(await page.locator('.meshpad-result-message').textContent(), 'Too slow');
+  assert.equal(await page.getByRole('dialog').getByRole('heading').textContent(), 'Try again!');
   await page.getByRole('button', { name: 'Retry', exact: true }).click();
   await page.waitForFunction(() => window.game.state.status === 'playing');
   await page.evaluate(() => window.game.win());
   assert.equal(await page.getByRole('button', { name: 'Play again' }).isVisible(), true);
   await page.getByRole('button', { name: 'Play again' }).click();
   await page.waitForFunction(() => window.game.state.status === 'playing');
-  await page.getByRole('combobox', { name: 'Choose level' }).selectOption('0');
+  await page.getByRole('button', { name: 'Previous level', exact: true }).click();
   await page.waitForFunction(() => window.game.state.index === 0);
+  await page.getByRole('button', { name: 'Next level', exact: true }).click();
+  await page.waitForFunction(() => window.game.state.index === 1);
   await page.setViewportSize({ width: 844, height: 390 });
   await page.waitForFunction(() => window.game.renderer.domElement.height === 780);
   const bounds = await page.locator('.meshpad-stage').boundingBox();
@@ -101,10 +108,9 @@ test('async setup races cannot update or retain the replacement level', async (t
         const geometry = new THREE.BoxGeometry();
         geometry.addEventListener('dispose', () => released++);
         context.scene.add(new THREE.Mesh(geometry, new THREE.MeshBasicMaterial()));
-        context.hud({ title: 'Wrong level' });
         return { dispose() { cleanupCalls++; } };
       } },
-      { name: 'Fast', setup({ hud }) { hud({ message: 'Ready' }); } },
+      { name: 'Fast', setup() {} },
     ] });
     await game.loadLevel(1);
     unblock();
@@ -113,7 +119,7 @@ test('async setup races cannot update or retain the replacement level', async (t
     game.dispose();
     return result;
   });
-  assert.deepEqual(result, { oldResult: false, aborted: true, staleWin: false, released: 1, cleanupCalls: 1, index: 1, title: 'Fast' });
+  assert.deepEqual(result, { oldResult: false, aborted: true, staleWin: false, released: 1, cleanupCalls: 1, index: 1, title: 'Level 2' });
 });
 
 test('hello-world starter is playable with touch and pauses simulation explicitly', async (t) => {
@@ -136,8 +142,8 @@ test('hello-world starter is playable with touch and pauses simulation explicitl
   await page.evaluate(() => window.game.resume());
   for (let i = 0; i < 3; i++) await page.touchscreen.tap(point.x, point.y);
   assert.equal(await page.evaluate(() => window.game.state.status), 'won');
-  assert.equal(await page.locator('.meshpad-score').textContent(), '3 / 3');
-  await page.getByRole('button', { name: 'Next level →' }).click();
+  assert.equal(await page.getByRole('dialog').getByRole('heading').textContent(), 'Level complete!');
+  await page.getByRole('dialog').getByRole('button', { name: 'Next level', exact: true }).click();
   await page.waitForFunction(() => window.game.state.index === 1 && window.game.state.status === 'playing');
   await page.evaluate(() => window.game.step(21));
   assert.equal(await page.evaluate(() => window.game.state.status), 'failed');

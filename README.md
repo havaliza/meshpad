@@ -11,6 +11,8 @@ npm install
 npm run dev
 ```
 
+The HUD shows only `← Level 1 →` at the top, with previous/next navigation. The shell uses Baloo 2, rounded arrow icons, outlined text and icons with crisp shadows, and a toy-brick palette of indigo, purple, cream, and yellow. Win/fail popups show a short title and one button: next level, replay, or retry. Baloo 2 loads from Google Fonts, with rounded system fonts as a fallback.
+
 The generated project has one dependency, `meshpad`, and one implementation file, `game.ts`. No HTML, CSS, Vite config, or separate TypeScript or Three.js install is required. `package.json`, `tsconfig.json`, `.gitignore`, and `vercel.json` are provided. The starter is a three-level tap-the-cube game with a countdown.
 
 For an empty directory:
@@ -29,17 +31,16 @@ createGame({
   title: 'My game',
   levels: [{
     name: 'Hello, world',
-    setup({ scene, hud, win, fail }) {
+    setup({ scene, win, fail }) {
       const cube = new THREE.Mesh(
         new THREE.BoxGeometry(),
-        new THREE.MeshStandardMaterial({ color: '#d1f99b' }),
+        new THREE.MeshStandardMaterial({ color: '#f9c203' }),
       );
       scene.add(cube);
-      hud({ message: 'Tap the cube.', hint: 'You have 10 seconds' });
       return {
         update(dt, elapsed) {
           cube.rotation.y += dt;
-          if (elapsed >= 10) fail('Time ran out.');
+          if (elapsed >= 10) fail();
         },
         pointer({ type, hits }) {
           if (type === 'pointerdown' && hits([cube]).length) win();
@@ -75,8 +76,7 @@ Each level is `{ name?, setup(context) }`. Setup may be asynchronous. Context pr
 | `scene`, `camera`, `renderer` | Fresh scene, perspective camera, and shared renderer. Default lighting is included. |
 | `level`, `index` | Current level and index. |
 | `width`, `height` | Current stage dimensions in CSS pixels. |
-| `hud({ title, message, score, progress, hint })` | Merge HUD changes. Progress is 0–1; `null` hides it. |
-| `win(message?)`, `fail(message?)` | Finish the level and display the result screen. Repeated results are ignored. |
+| `win()`, `fail()` | Finish the level and display a minimal popup with one action. Repeated results are ignored. |
 | `signal` | Aborted on level exit. Use for fetches and event listeners. |
 
 Setup can return `{ update(dt, elapsed), pointer(event), resize(width, height), dispose() }`; every hook is optional. Time values are seconds. Pointer events provide `type`, `originalEvent`, normalized `point`, `raycaster`, and `hits(objects?)` for recursive picking. The canvas captures pointers for dragging and forwards cancellation.

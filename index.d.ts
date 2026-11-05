@@ -2,15 +2,6 @@
 import type * as Three from 'three';
 export * as THREE from 'three';
 
-export interface HUDState {
-  title?: string;
-  message?: string;
-  score?: string | number;
-  /** A number from 0 to 1; null hides the progress bar. */
-  progress?: number | null;
-  hint?: string;
-}
-
 export interface GamePointer {
   type: 'pointerdown' | 'pointermove' | 'pointerup' | 'pointercancel';
   originalEvent: PointerEvent;
@@ -41,9 +32,8 @@ export interface LevelContext {
   signal: AbortSignal;
   readonly width: number;
   readonly height: number;
-  hud(patch: HUDState): void;
-  win(message?: string): boolean;
-  fail(message?: string): boolean;
+  win(): boolean;
+  fail(): boolean;
 }
 
 export interface Level {
@@ -86,8 +76,8 @@ export interface Game {
   restart(): Promise<boolean>;
   next(): Promise<boolean>;
   previous(): Promise<boolean>;
-  win(message?: string): boolean;
-  fail(message?: string): boolean;
+  win(): boolean;
+  fail(): boolean;
   pause(): void;
   resume(): void;
   /** Advance up to 60 seconds in fixed substeps, then draw. */

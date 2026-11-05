@@ -87,7 +87,7 @@ test('type errors block builds, dev, rendering, and the standalone check without
   await initProject(root);
   await mkdir(resolve(root, 'dist'));
   await writeFile(resolve(root, 'dist/keep.txt'), 'last good build');
-  await writeFile(resolve(root, 'game.ts'), "import { createGame } from 'meshpad';\nconst count: number = 'wrong';\ncreateGame({ levels: [{ setup({ hud }) { hud({ progress: 'wrong' }); } }] });\n");
+  await writeFile(resolve(root, 'game.ts'), "import { createGame } from 'meshpad';\nconst count: number = 'wrong';\ncreateGame({ levels: [{ setup() {} }] });\n");
   for (const command of [buildProject, startDev, captureGame, checkProject]) {
     await assert.rejects(command(undefined, { root }), (error) => {
       assert.match(error.message, /TypeScript check failed/);
@@ -106,7 +106,7 @@ test('type errors block builds, dev, rendering, and the standalone check without
 
 test('a single TS file works without config; imported TypeScript is checked too', async (t) => {
   const root = await temporary(t);
-  await writeFile(resolve(root, 'main.ts'), "import { createGame } from 'meshpad';\ncreateGame({ levels: [{ setup({ hud }) { hud({ score: 1 }); } }] });\n");
+  await writeFile(resolve(root, 'main.ts'), "import { createGame } from 'meshpad';\ncreateGame({ levels: [{ setup() {} }] });\n");
   await checkProject('main.ts', { root });
   await writeFile(resolve(root, 'value.ts'), "export const value: number = 'wrong';");
   await writeFile(resolve(root, 'main.ts'), "import { value } from './value.ts'; console.log(value);");

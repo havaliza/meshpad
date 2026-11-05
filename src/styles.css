@@ -1,7 +1,9 @@
+@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&display=swap');
+
 :root {
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: #eef3eb;
-  background: #0c1414;
+  font-family: "Baloo 2", "Arial Rounded MT Bold", ui-rounded, system-ui, sans-serif;
+  color: #efe3d7;
+  background: #19163a;
   color-scheme: dark;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
@@ -11,7 +13,11 @@ html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; overscroll-
 body { position: fixed; inset: 0; }
 .meshpad-root, .meshpad-root * { box-sizing: border-box; }
 .meshpad-root {
-  --meshpad-accent: #d1f99b;
+  --meshpad-accent: #f9c203;
+  --meshpad-text-outline: #362668;
+  --meshpad-text-shadow: #120f2c;
+  font-family: "Baloo 2", "Arial Rounded MT Bold", ui-rounded, system-ui, sans-serif;
+  color: #efe3d7;
   position: relative;
   width: 100%; height: 100dvh;
   overflow: hidden; isolation: isolate;
@@ -22,53 +28,70 @@ body { position: fixed; inset: 0; }
   position: absolute; top: 50%; left: 50%;
   width: 100%; height: 100%; max-width: 540px;
   transform: translate(-50%, -50%);
-  overflow: hidden; background: #142323;
+  overflow: hidden; background: #221e4e;
 }
 .meshpad-canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; outline: none; touch-action: none; }
 .meshpad-hud { position: absolute; inset: 0; pointer-events: none; }
 .meshpad-top {
   position: absolute; top: 0; left: 0; right: 0;
-  padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) 28px max(24px, env(safe-area-inset-left));
-  background: linear-gradient(#142323e8, #14232300);
+  padding: max(20px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 16px max(16px, env(safe-area-inset-left));
 }
-.meshpad-brand { font-size: 11px; font-weight: 800; letter-spacing: 2.5px; color: var(--meshpad-accent); }
-.meshpad-brand span { color: #8baba4; font-weight: 500; font-size: 9px; margin-left: 10px; letter-spacing: 1.5px; }
-.meshpad-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; }
-.meshpad-heading h1 { margin: 0; font-size: clamp(25px, 7vw, 36px); font-weight: 650; line-height: 1.15; letter-spacing: -1px; }
-.meshpad-score { color: var(--meshpad-accent); font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.meshpad-message { margin: 8px 0 0; color: #a5bfb8; font-size: 13px; line-height: 1.5; }
-.meshpad-progress { appearance: none; -webkit-appearance: none; width: 100%; height: 4px; border: 0; border-radius: 5px; background: #ffffff18; margin-top: 16px; overflow: hidden; }
-.meshpad-progress::-webkit-progress-bar { background: #ffffff18; }
-.meshpad-progress::-webkit-progress-value { background: var(--meshpad-accent); }
-.meshpad-progress::-moz-progress-bar { background: var(--meshpad-accent); }
-.meshpad-bottom {
-  position: absolute; bottom: 0; left: 0; right: 0;
-  padding: 24px max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
-  background: linear-gradient(#14232300, #142323f5);
+.meshpad-top nav { display: flex; align-items: center; justify-content: center; gap: 18px; }
+.meshpad-top h1 {
+  margin: 0; min-width: 0;
+  color: #efe3d7; font-size: clamp(22px, 6vw, 28px); font-weight: 800;
+  line-height: 1.2; text-align: center; font-variant-numeric: tabular-nums;
 }
-.meshpad-hint { text-align: center; color: #adc2bc; font-size: 12px; line-height: 1.5; margin: 0 0 20px; min-height: 18px; }
-.meshpad-bottom nav { display: flex; align-items: center; gap: 8px; padding: 8px; border: 1px solid #ffffff18; border-radius: 18px; background: #1d302de8; pointer-events: auto; }
-.meshpad-root button, .meshpad-root select { font: inherit; color: inherit; appearance: none; -webkit-appearance: none; touch-action: manipulation; }
-.meshpad-root button { display: grid; place-items: center; min-width: 44px; min-height: 44px; padding: 10px; border: 0; border-radius: 12px; background: #ffffff08; font-size: 21px; cursor: pointer; }
-.meshpad-root button:active { transform: scale(.96); }
-.meshpad-root button:disabled { opacity: .25; cursor: default; }
-.meshpad-root button:focus-visible, .meshpad-root select:focus-visible { outline: 2px solid var(--meshpad-accent); outline-offset: 2px; }
-.meshpad-picker { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 2px; padding-left: 7px; }
-.meshpad-picker span { font-size: 8px; letter-spacing: 2px; color: #8caaa1; }
-.meshpad-picker select { width: 100%; min-height: 28px; padding: 0; border: 0; background: transparent; font-size: 12px; cursor: pointer; }
-.meshpad-picker option { background: #1d302d; }
-.meshpad-overlay { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; background: #0c1716c9; pointer-events: auto; }
-.meshpad-panel { width: 100%; max-width: 340px; padding: 32px 24px 24px; border: 1px solid #c4e4d333; border-radius: 26px; background: #1d302d; box-shadow: 0 24px 70px #0005; text-align: center; outline: none; }
-.meshpad-result-icon { display: block; color: var(--meshpad-accent); font-size: 44px; }
-.meshpad-panel h2 { font-size: 25px; letter-spacing: -.7px; margin: 18px 0 8px; }
-.meshpad-result-message { color: #a5bfb8; font-size: 14px; line-height: 1.6; margin: 0 0 24px; }
-.meshpad-panel button { width: 100%; font-size: 14px; font-weight: 650; }
-.meshpad-panel .meshpad-primary { background: var(--meshpad-accent); color: #203424; }
-.meshpad-panel .meshpad-secondary { margin-top: 8px; background: transparent; color: #adc2bc; }
+.meshpad-top h1, .meshpad-panel h2, .meshpad-button-label {
+  /* Paint the outline first so Baloo's rounded letterforms keep their full weight. */
+  -webkit-text-stroke: 3px var(--meshpad-text-outline);
+  paint-order: stroke fill;
+  filter: drop-shadow(0 3px 0 var(--meshpad-text-shadow));
+}
+.meshpad-root button {
+  display: grid; place-items: center;
+  min-width: 44px; min-height: 44px; padding: 10px;
+  border: 0; border-radius: 14px;
+  font: inherit; font-weight: 800; line-height: 1.2; color: #efe3d7;
+  background: #4a40aa;
+  box-shadow: inset 0 2px 0 #756bd7, 0 4px 0 #2e2868;
+  appearance: none; -webkit-appearance: none;
+  touch-action: manipulation; cursor: pointer;
+}
+.meshpad-top button { flex: 0 0 44px; pointer-events: auto; }
+.meshpad-top svg {
+  display: block; width: 24px; height: 24px; overflow: visible;
+  fill: none; stroke: currentColor; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round;
+  filter: drop-shadow(0 3px 0 var(--meshpad-text-shadow));
+}
+.meshpad-top .meshpad-icon-outline { stroke: var(--meshpad-text-outline); stroke-width: 6.5; }
+.meshpad-root button:active:not(:disabled) { transform: translateY(2px); box-shadow: inset 0 2px 0 #ffffff26, 0 2px 0 #2e2868; }
+.meshpad-root button:disabled { opacity: .3; cursor: default; }
+.meshpad-root button:focus-visible { outline: 3px solid var(--meshpad-accent); outline-offset: 5px; }
+.meshpad-overlay { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; background: #19163abf; pointer-events: auto; }
+.meshpad-panel {
+  width: 100%; max-width: 280px; padding: 28px 24px 24px;
+  border: 2px solid #756bd7; border-radius: 24px; background: #2e2868;
+  box-shadow: inset 0 2px 0 #ffffff12, 0 7px 0 #120f2c, 0 20px 48px #120f2c66;
+  text-align: center; outline: none;
+}
+.meshpad-panel h2 { margin: 0 0 22px; font-size: 28px; font-weight: 800; line-height: 1.15; }
+.meshpad-panel .meshpad-primary {
+  --meshpad-text-outline: #956000;
+  --meshpad-text-shadow: #6d4100;
+  width: 100%; font-size: 20px; color: #fff4db; background: var(--meshpad-accent);
+  box-shadow: inset 0 2px 0 #ffe56a, 0 4px 0 #b87803;
+}
+.meshpad-panel .meshpad-primary:active { box-shadow: inset 0 2px 0 #ffe56a, 0 2px 0 #b87803; }
 .meshpad-root [hidden] { display: none !important; }
+@supports not (paint-order: stroke fill) {
+  .meshpad-top h1, .meshpad-panel h2, .meshpad-button-label {
+    -webkit-text-stroke: 0;
+    text-shadow: -1px -1px 0 var(--meshpad-text-outline), 0 -1.5px 0 var(--meshpad-text-outline), 1px -1px 0 var(--meshpad-text-outline), 1.5px 0 0 var(--meshpad-text-outline), 1px 1px 0 var(--meshpad-text-outline), 0 1.5px 0 var(--meshpad-text-outline), -1px 1px 0 var(--meshpad-text-outline), -1.5px 0 0 var(--meshpad-text-outline);
+  }
+}
 @media (max-height: 500px) {
   .meshpad-top { padding-top: max(12px, env(safe-area-inset-top)); }
-  .meshpad-brand, .meshpad-hint { display: none; }
-  .meshpad-heading { margin-top: 0; }
-  .meshpad-bottom { padding-top: 8px; padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+  .meshpad-top nav { gap: 10px; }
+  .meshpad-top h1 { font-size: 22px; }
 }

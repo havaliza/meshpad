@@ -15,7 +15,7 @@ export function shell(entry, title = 'Meshpad') {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-    <meta name="theme-color" content="#142323" />
+    <meta name="theme-color" content="#221e4e" />
     <meta name="format-detection" content="telephone=no, date=no, address=no, email=no" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />

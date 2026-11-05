@@ -55,7 +55,7 @@ export function createGame(options = {}) {
   const invoke = (callback) => { Promise.resolve().then(callback).catch(() => {}); };
   const hud = createHUD(stage, levels, {
     previous: () => invoke(() => game.previous()), next: () => invoke(() => game.next()),
-    restart: () => invoke(() => game.restart()), loadLevel: (index) => invoke(() => game.loadLevel(index)),
+    restart: () => invoke(() => game.restart()),
   });
   const isCurrent = (session) => !disposed && current === session && !session.controller.signal.aborted;
   const report = (error, session = current) => {
@@ -63,7 +63,7 @@ export function createGame(options = {}) {
     lastError = error instanceof Error ? error : new Error(String(error));
     status = 'error';
     stopLoop();
-    hud.result('error', lastError.message);
+    hud.result('error');
     options.onError?.(lastError);
   };
   const draw = () => {
@@ -86,11 +86,11 @@ export function createGame(options = {}) {
     if (shouldRun()) frame = requestAnimationFrame(tick);
   };
   const startLoop = () => { if (!frame && shouldRun()) frame = requestAnimationFrame(tick); };
-  const finish = (session, outcome, message) => {
+  const finish = (session, outcome) => {
     if (!isCurrent(session) || !['playing', 'paused'].includes(status)) return false;
     status = outcome;
     stopLoop();
-    hud.result(outcome, message);
+    hud.result(outcome);
     return true;
   };
   const resize = () => {
@@ -136,8 +136,8 @@ export function createGame(options = {}) {
     stopLoop();
     cleanup(current);
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(options.background ?? '#142323');
-    scene.add(new THREE.HemisphereLight(0xe6fff0, 0x30453e, 2.5));
+    scene.background = new THREE.Color(options.background ?? '#221e4e');
+    scene.add(new THREE.HemisphereLight(0xefe3ff, 0x30245e, 2.5));
     const light = new THREE.DirectionalLight(0xfff4d8, 3);
     light.position.set(4, 8, 5);
     scene.add(light);
@@ -148,18 +148,14 @@ export function createGame(options = {}) {
     current = session;
     status = 'loading'; elapsed = 0; lastError = null;
     hud.reset(index);
-    hud.update({ message: 'Loading…' });
     const context = {
       scene, camera, renderer, level: levels[index], index,
       signal: session.controller.signal,
       get width() { return width; }, get height() { return height; },
-      hud: (patch) => { if (isCurrent(session)) hud.update(patch); },
-      win: (message) => finish(session, 'won', message),
-      fail: (message) => finish(session, 'failed', message),
+      win: () => finish(session, 'won'),
+      fail: () => finish(session, 'failed'),
     };
     try {
-      // Clear the loading label before setup so synchronous HUD changes persist.
-      hud.update({ message: '' });
       const hooks = await levels[index].setup(context);
       session.hooks = hooks ?? {};
       if (disposed || version !== generation) {
@@ -187,8 +183,8 @@ export function createGame(options = {}) {
     restart: () => loadLevel(current.index),
     next: () => loadLevel(Math.min(current.index + 1, levels.length - 1)),
     previous: () => loadLevel(Math.max(current.index - 1, 0)),
-    win: (message) => finish(current, 'won', message),
-    fail: (message) => finish(current, 'failed', message),
+    win: () => finish(current, 'won'),
+    fail: () => finish(current, 'failed'),
     pause() { manuallyPaused = true; if (status === 'playing') status = 'paused'; stopLoop(); },
     resume() { manuallyPaused = false; if (status === 'paused') status = 'playing'; startLoop(); },
     step(seconds = 1 / 60) {
@@ -221,10 +217,9 @@ export function createGame(options = {}) {
   listen(stage, 'touchmove', (event) => { if (event.touches.length > 1) event.preventDefault(); }, { passive: false });
   listen(renderer.domElement, 'webglcontextlost', (event) => {
     event.preventDefault(); contextLost = true; stopLoop();
-    hud.update({ message: 'Graphics paused. Restoring…' });
   });
   listen(renderer.domElement, 'webglcontextrestored', () => {
-    contextLost = false; hud.update({ message: '' }); resize(); startLoop();
+    contextLost = false; resize(); startLoop();
   });
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
