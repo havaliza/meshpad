@@ -11,7 +11,7 @@ npm install
 npm run dev
 ```
 
-The HUD shows only `← Level 1 →` at the top, with previous/next navigation. The shell uses Baloo 2, rounded arrow icons, outlined text and icons with crisp shadows, and a toy-brick palette of indigo, purple, cream, and yellow. Win/fail popups show a short title and one button: next level, replay, or retry. Baloo 2 loads from Google Fonts, with rounded system fonts as a fallback.
+The HUD keeps a dropdown-style level chooser on the left, an optional hearts/time/moves counter at the true center, and restart on the right in one row. Rounded buttons, simple SVG icons, Baloo 2, and a purple/cream/yellow palette give it a casual game feel. Win popups offer next level or replay. Fail popups offer retry, plus play on for hearts, time, and moves modes. Baloo 2 loads from Google Fonts, with rounded system fonts as a fallback.
 
 The generated project has one dependency, `meshpad`, and one implementation file, `game.ts`. No HTML, CSS, Vite config, or separate TypeScript or Three.js install is required. `package.json`, `tsconfig.json`, `.gitignore`, and `vercel.json` are provided. The starter is a three-level tap-the-cube game with a countdown.
 
@@ -72,16 +72,18 @@ The generated `tsconfig.json` extends `meshpad/tsconfig`, which provides strict 
 
 ### Game API
 
-`createGame({ levels, title?, root?, initialLevel?, background?, maxPixelRatio?, maxWidth?, renderer?, onError? })` returns a game. Level indexes in JavaScript start at **0**. The CLI's `--level` starts at **1**.
+`createGame({ levels, title?, root?, initialLevel?, failure?, background?, maxPixelRatio?, maxWidth?, renderer?, onError? })` returns a game. Level indexes in JavaScript start at **0**. The CLI's `--level` starts at **1**.
 
-Each level is `{ name?, setup(context) }`. Initial setup starts in a microtask, after the entry module's synchronous code has run, so it can use classes and constants declared below `createGame()`. Setup may be asynchronous. Context provides:
+Each level is `{ name?, difficulty?, failure?, setup(context) }`. `difficulty` accepts `normal` (the default), `hard`, `very-hard`, or `ultra-hard`. The scrollable level chooser shows each level’s number, optional name, and difficulty badge. Initial setup starts in a microtask, after the entry module's synchronous code has run, so it can use classes and constants declared below `createGame()`. Setup may be asynchronous. Context provides:
 
 | Value | Purpose |
 | --- | --- |
 | `scene`, `camera`, `renderer` | Fresh scene, perspective camera, and shared renderer. Default lighting is included. |
 | `level`, `index` | Current level and index. |
 | `width`, `height` | Current stage dimensions in CSS pixels. |
-| `win()`, `fail()` | Finish the level and display a minimal popup with one action. Repeated results are ignored. |
+| `win()`, `fail()` | Finish the level and display a result popup. `fail()` always fails immediately. Repeated results are ignored. |
+| `mistake()`, `move()` | Lose one heart or spend one move in the matching mode. Returns `false` in other modes, outside active play, or from an old level. |
+| `failure` | Read-only resource snapshot: `type`, `initial`, `remaining`, and `playOnAmount`. |
 | `signal` | Aborted on level exit. Use for fetches and event listeners. |
 
 Setup can return the following optional hooks and settings:
@@ -95,13 +97,48 @@ Setup can return the following optional hooks and settings:
 | `debug()` | Return JSON-serializable game state for `game.debug()` and headless JSON. Keep this hook free of side effects; inspection may call it repeatedly. |
 | `camera` | Supply a Three.js camera, including an orthographic camera. Meshpad leaves its projection alone. |
 | `autoResizeCamera` | Set `false` to preserve the default camera's custom projection, or `true` to update a supplied perspective camera's aspect automatically. |
+| `onPlayOn()` | Optional recovery hook after the resource is restored. The scene, elapsed time, and level signal are preserved. Hook errors show retry. |
 | `dispose()` | Release non-scene resources. |
 
 For example, return `{ camera: myOrthographicCamera, resize(width, height) { /* update its frustum */ }, debug: () => ({ moves, grabbed }) }`. The default perspective camera remains available in setup's context; `game.camera` exposes the active camera after setup.
 
-The game exposes `ready`, `loadLevel(index)`, `restart()`, `next()`, `previous()`, `win()`, `fail()`, `pause()`, `resume()`, `step(seconds)`, `debug()`, and `dispose()`, plus `scene`, `camera`, `renderer`, and read-only `state`. Await `game.ready` before interacting programmatically; `scene` and `camera` are initially undefined. `debug()` returns `null` without a debug hook. Loading returns a promise and resolves `false` if a newer load supersedes it. An explicit load or disposal before initial setup supersedes the deferred load as well. Navigation stops at the first/last level. `state.status` is `loading`, `playing`, `paused`, `won`, `failed`, `error`, or `disposed`.
+The game exposes `ready`, `loadLevel(index)`, `restart()`, `next()`, `previous()`, `win()`, `fail()`, `mistake()`, `move()`, `playOn()`, `pause()`, `resume()`, `step(seconds)`, `debug()`, and `dispose()`, plus `scene`, `camera`, `renderer`, and read-only `state`. Await `game.ready` before interacting programmatically; `scene` and `camera` are initially undefined. `debug()` returns `null` without a debug hook. Loading returns a promise and resolves `false` if a newer load supersedes it. An explicit load or disposal before initial setup supersedes the deferred load as well. Navigation stops at the first/last level. `state.status` is `loading`, `playing`, `paused`, `won`, `failed`, `error`, or `disposed`.
 
 Each level owns its scene: Meshpad disposes geometry, materials, textures, skeletons, and shadows on exit. Avoid sharing these resources across levels. Use `dispose()` for controls, timers, audio, or render targets. Use `signal` for listeners (`element.addEventListener('click', handler, { signal })`) and async work; check `signal.aborted` after awaiting work that cannot be cancelled. Old level callbacks cannot alter the active level. Setup failures reject the load promise and show a retry screen; runtime hook failures show the same screen and call `onError`.
+
+### Failure modes
+
+Try all four HUDs with `node bin/meshpad.js dev examples/failure-modes/game.ts` in this repository. Tap the cube to progress; in this demo, missed taps trigger mistakes or consume moves.
+
+Set `failure` on the game, or override it on an individual level. Omitting it preserves the existing direct fail/retry behavior.
+
+| Mode | Configuration | Failure trigger | Play on |
+| --- | --- | --- | --- |
+| Default | `{ type: 'default' }` | `fail()` | Unavailable; retry only |
+| Hearts | `{ type: 'hearts', hearts: 3 }` | Each `mistake()` loses one heart; zero fails | Refill all hearts |
+| Time | `{ type: 'time', seconds: 90, playOnSeconds: 20 }` | Countdown reaches zero | Add 20 seconds, configurable |
+| Moves | `{ type: 'moves', moves: 25, playOnMoves: 10 }` | Each `move()` spends one move; zero fails | Add 10 moves, configurable |
+
+Hearts default to 3 and support 3, 4, or 5. Time and moves require a positive starting value. Move counts and bonuses must be positive safe integers; seconds and time bonuses must be positive finite numbers. Invalid settings throw before a renderer is created.
+
+```ts
+createGame({
+  failure: { type: 'hearts', hearts: 4 },
+  levels: [
+    { setup({ mistake }) { /* Call mistake() for each incorrect action. */ } },
+    { difficulty: 'hard', failure: { type: 'time', seconds: 60, playOnSeconds: 30 }, setup() {} },
+    { failure: { type: 'moves', moves: 15 }, setup({ move, win }) {
+      // After applying an accepted move: if solved, win(); otherwise, move().
+      // Checking the win first lets the final available move complete the level.
+    } },
+    { failure: { type: 'default' }, setup({ fail }) { /* Direct fail/retry. */ } },
+  ],
+});
+```
+
+The timer is automatic and displays remaining seconds rounded up as `MM:SS`. It advances with simulation time, including `step()`, and pauses while gameplay is paused, the level list is open, or the tab is hidden. Hearts show filled and empty heart icons; moves show a box labeled **Moves** above the count. Every variant keeps the level index and the same navigation controls. The dropdown-style level label opens a scrollable list of level rows with difficulty badges and allows selecting any level; closing it restores the prior pause state. Programmatic `next()` and `previous()` remain available.
+
+`game.state.failure` and `context.failure` expose immutable snapshots. Resource fields are `null` in default mode. On failure, **Play on** restores hearts or adds the configured time/moves without rerunning setup, resetting elapsed time, or replacing the board. **Retry** and the HUD restart button start the level fresh. Play on can be used after each failure and returns `false` unless the current level has failed in a resource mode. Win and error screens never offer play on.
 
 ### Mobile defaults
 

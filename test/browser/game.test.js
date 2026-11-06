@@ -52,7 +52,8 @@ test('mobile sizing, HUD navigation, results, retry, and final-level boundaries'
   assert.equal(await page.locator('h1').textContent(), 'Level 1');
   assert.equal(await page.locator('.meshpad-bottom, select, progress, .meshpad-score, .meshpad-message, .meshpad-hint').count(), 0);
   assert.equal(await page.locator('.meshpad-top button').count(), 2);
-  assert.equal(await page.getByRole('button', { name: 'Previous level', exact: true }).isDisabled(), true);
+  assert.equal(await page.locator('[data-action="levels"]').isVisible(), true);
+  assert.equal(await page.getByRole('button', { name: 'Restart level', exact: true }).isVisible(), true);
   assert.deepEqual(await page.evaluate(() => ({ ratio: window.game.renderer.getPixelRatio(), width: window.game.renderer.domElement.width })), { ratio: 2, width: 780 });
   assert.equal(await page.evaluate(() => window.game.win()), true);
   assert.equal(await page.evaluate(() => window.game.fail()), false);
@@ -69,7 +70,7 @@ test('mobile sizing, HUD navigation, results, retry, and final-level boundaries'
   assert.equal(await page.locator('h1').textContent(), 'Level 2');
   assert.equal(await page.getByRole('dialog').isVisible(), false);
   assert.equal(await page.locator('.meshpad-top').evaluate((element) => element.contains(document.activeElement)), true);
-  assert.equal(await page.getByRole('button', { name: 'Next level', exact: true }).isDisabled(), true);
+  assert.equal(await page.getByRole('button', { name: 'Next level', exact: true }).count(), 0);
   await page.evaluate(() => window.game.step(2));
   assert.equal(await page.evaluate(() => window.game.state.status), 'failed');
   assert.equal(await page.getByRole('dialog').getByRole('heading').textContent(), 'Try again!');
@@ -79,9 +80,11 @@ test('mobile sizing, HUD navigation, results, retry, and final-level boundaries'
   assert.equal(await page.getByRole('button', { name: 'Play again' }).isVisible(), true);
   await page.getByRole('button', { name: 'Play again' }).click();
   await page.waitForFunction(() => window.game.state.status === 'playing');
-  await page.getByRole('button', { name: 'Previous level', exact: true }).click();
+  await page.locator('[data-action="levels"]').click();
+  await page.getByRole('button', { name: 'Level 1: Stage 1', exact: true }).click();
   await page.waitForFunction(() => window.game.state.index === 0);
-  await page.getByRole('button', { name: 'Next level', exact: true }).click();
+  await page.locator('[data-action="levels"]').click();
+  await page.getByRole('button', { name: 'Level 2: Stage 2', exact: true }).click();
   await page.waitForFunction(() => window.game.state.index === 1);
   await page.setViewportSize({ width: 844, height: 390 });
   await page.waitForFunction(() => window.game.renderer.domElement.height === 780);
@@ -342,4 +345,237 @@ test('headless failures report invalid debug snapshots and the offending script 
   const script = resolve(root, 'steps.json');
   await writeFile(script, JSON.stringify([{ type: 'pointerdown', world: [0, 0, 20] }]));
   await assert.rejects(captureGame('test/fixtures/scripted.ts', { script, output: resolve(root, 'bad-pointer.png') }), /Script step 1 \(pointerdown\).*outside the camera depth range/);
+});
+
+test('hearts lose one per mistake; play on preserves the board and retry refills it', async (t) => {
+  const page = await pageFor(t);
+  await page.evaluate(async () => {
+    window.setups = 0;
+    window.continues = 0;
+    window.game = window.fixture.createGame({ failure: { type: 'hearts', hearts: 5 }, levels: [{ setup(context) {
+      window.setups++;
+      window.levelContext = context;
+      return { onPlayOn() { window.continues++; }, pointer() { context.mistake(); } };
+    } }, { failure: { type: 'hearts', hearts: 3 }, setup() {} }] });
+    await window.game.ready;
+    window.savedScene = window.game.scene;
+  });
+  assert.equal(await page.locator('.meshpad-heart').count(), 5);
+  await page.locator('.meshpad-resource').tap();
+  assert.equal(await page.evaluate(() => window.game.state.failure.remaining), 5);
+  assert.equal(await page.evaluate(() => window.game.move()), false);
+  await page.evaluate(() => {
+    window.game.step(1);
+    for (let i = 0; i < 4; i++) window.levelContext.mistake();
+  });
+  assert.equal(await page.evaluate(() => window.game.state.status), 'playing');
+  assert.equal(await page.locator('.meshpad-heart-empty').count(), 4);
+  await page.evaluate(() => window.game.mistake());
+  assert.equal(await page.getByRole('dialog').getByRole('heading').textContent(), 'Out of hearts!');
+  assert.equal(await page.evaluate(() => window.game.mistake()), false);
+  await page.keyboard.press('Tab');
+  assert.equal(await page.getByRole('button', { name: 'Retry', exact: true }).evaluate((button) => button === document.activeElement), true);
+  await page.keyboard.press('Tab');
+  assert.equal(await page.getByRole('button', { name: 'Play on', exact: true }).evaluate((button) => button === document.activeElement), true);
+  await page.getByRole('button', { name: 'Play on', exact: true }).click();
+  assert.deepEqual(await page.evaluate(() => ({ remaining: window.game.state.failure.remaining, setups: window.setups,
+    continues: window.continues, sameScene: window.game.scene === window.savedScene, aborted: window.levelContext.signal.aborted,
+    elapsed: Math.round(window.game.state.elapsed), status: window.game.state.status })),
+  { remaining: 5, setups: 1, continues: 1, sameScene: true, aborted: false, elapsed: 1, status: 'playing' });
+  assert.equal(await page.evaluate(() => window.game.playOn()), false);
+  await page.evaluate(() => { window.game.fail(); window.game.playOn(); window.game.mistake(); });
+  await page.getByRole('button', { name: 'Restart level', exact: true }).click();
+  await page.waitForFunction(() => window.setups === 2 && window.game.state.status === 'playing');
+  assert.equal(await page.evaluate(() => window.game.state.failure.remaining), 5);
+  await page.evaluate(async () => { await window.game.loadLevel(1); });
+  assert.equal(await page.locator('.meshpad-heart').count(), 3);
+  assert.equal(await page.evaluate(() => window.levelContext.mistake()), false);
+  assert.equal(await page.evaluate(() => window.game.state.failure.remaining), 3);
+});
+
+test('timer formats MM:SS, pauses with gameplay and levels list, and grants configurable extra time', async (t) => {
+  const page = await pageFor(t);
+  await page.evaluate(async () => {
+    window.game = window.fixture.createGame({ failure: { type: 'time', seconds: 65, playOnSeconds: 7 }, levels: [{ setup() {} }] });
+    await window.game.ready;
+  });
+  assert.equal(await page.locator('.meshpad-resource-value').textContent(), '01:05');
+  await page.evaluate(() => { window.game.step(5); window.game.pause(); window.game.step(10); });
+  assert.equal(await page.locator('.meshpad-resource-value').textContent(), '01:00');
+  await page.locator('[data-action="levels"]').click();
+  await page.keyboard.press('Escape');
+  assert.equal(await page.evaluate(() => window.game.state.status), 'paused');
+  await page.evaluate(() => window.game.resume());
+  await page.locator('[data-action="levels"]').click();
+  await page.evaluate(() => { window.game.step(10); window.game.resume(); });
+  assert.equal(await page.evaluate(() => window.game.state.status), 'paused');
+  assert.ok(Math.abs(await page.evaluate(() => window.game.state.failure.remaining) - 60) < 1e-8);
+  await page.getByRole('button', { name: 'Back to game', exact: true }).click();
+  assert.equal(await page.evaluate(() => window.game.state.status), 'playing');
+  await page.evaluate(() => window.game.step(60));
+  assert.equal(await page.locator('.meshpad-resource-value').textContent(), '00:00');
+  assert.equal(await page.getByRole('dialog').getByRole('heading').textContent(), 'Time’s up!');
+  assert.match(await page.locator('.meshpad-result-detail').textContent(), /\+7 seconds/);
+  await page.getByRole('button', { name: 'Play on', exact: true }).click();
+  assert.equal(await page.evaluate(() => window.game.state.failure.remaining), 7);
+  await page.evaluate(() => window.game.step(7));
+  assert.equal(await page.evaluate(() => window.game.state.status), 'failed');
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  await page.waitForFunction(() => window.game.state.status === 'playing');
+  assert.equal(await page.locator('.meshpad-resource-value').textContent(), '01:05');
+});
+
+test('moves count only explicit moves and per-level modes override the game default', async (t) => {
+  const page = await pageFor(t);
+  const results = await page.evaluate(async () => {
+    const game = window.game = window.fixture.createGame({ failure: { type: 'moves', moves: 2 }, levels: [
+      { setup(context) { window.levelContext = context; } },
+      { failure: { type: 'moves', moves: 1, playOnMoves: 4 }, setup() {} },
+      { failure: { type: 'default' }, setup() {} },
+      { failure: { type: 'time', seconds: 1 }, setup() {} },
+    ] });
+    await game.ready;
+    game.step(3);
+    const initial = game.state.failure.remaining;
+    window.levelContext.move(); game.move();
+    const failed = game.state.status;
+    game.playOn();
+    const defaultBonus = game.state.failure.remaining;
+    await game.loadLevel(1);
+    game.move(); game.playOn();
+    const customBonus = game.state.failure.remaining;
+    await game.loadLevel(2);
+    game.fail();
+    const noPlayOn = game.playOn();
+    const defaultButtons = [...document.querySelectorAll('.meshpad-panel button')].filter((button) => button.offsetParent !== null).map((button) => button.textContent);
+    await game.loadLevel(3);
+    game.step(1); game.playOn();
+    const defaultTimeBonus = game.state.failure.remaining;
+    await game.loadLevel(0);
+    game.move(); game.win(); game.move();
+    return { initial, failed, defaultBonus, customBonus, noPlayOn, defaultButtons, defaultTimeBonus, winningStatus: game.state.status };
+  });
+  assert.deepEqual(results, { initial: 2, failed: 'failed', defaultBonus: 10, customBonus: 4, noPlayOn: false, defaultButtons: ['Retry'], defaultTimeBonus: 20, winningStatus: 'won' });
+  await page.evaluate(() => window.game.restart());
+  assert.equal(await page.locator('.meshpad-resource-label').textContent(), 'Moves');
+  assert.equal(await page.locator('.meshpad-resource-value').textContent(), '2');
+});
+
+test('all four HUDs keep the constraint truly centered, level left, and actions right in one row', async (t) => {
+  const page = await pageFor(t);
+  await page.evaluate(async () => {
+    window.game = window.fixture.createGame({ levels: [
+      { setup() {} },
+      { failure: { type: 'hearts', hearts: 5 }, setup() {} },
+      { failure: { type: 'time', seconds: 125 }, setup() {} },
+      { failure: { type: 'moves', moves: 25 }, setup() {} },
+    ] });
+    await window.game.ready;
+  });
+  for (const viewport of [{ width: 390, height: 844 }, { width: 320, height: 568 }, { width: 844, height: 390 }]) {
+    await page.setViewportSize(viewport);
+    await page.waitForFunction(() => Math.abs(document.querySelector('.meshpad-stage').getBoundingClientRect().height - innerHeight) < 1);
+    for (let index = 0; index < 4; index++) {
+      await page.evaluate((index) => window.game.loadLevel(index), index);
+      const layout = await page.locator('.meshpad-top nav').evaluate((nav) => {
+        const outer = nav.getBoundingClientRect();
+        const elements = [...nav.querySelectorAll('h1, .meshpad-resource, .meshpad-hud-actions button')].filter((element) => !element.hidden).map((element) => {
+          const rect = element.getBoundingClientRect();
+          return { left: rect.left, right: rect.right, centerY: rect.top + rect.height / 2, clipped: element.scrollWidth > element.clientWidth + 1 };
+        });
+        const resource = nav.querySelector('.meshpad-resource');
+        const constraint = resource.getBoundingClientRect();
+        const actions = nav.querySelector('.meshpad-hud-actions').getBoundingClientRect();
+        return { centered: resource.hidden || Math.abs((constraint.left + constraint.right - outer.left - outer.right) / 2) < 0.5,
+          levelLeft: elements[0].left < outer.left + outer.width / 4,
+          actionsRight: actions.left > outer.left + outer.width / 2,
+          inside: elements.every((element) => element.left >= outer.left && element.right <= outer.right),
+          aligned: elements.every((element) => Math.abs(element.centerY - elements[0].centerY) < 1),
+          overlap: elements.some((element, i) => i > 0 && element.left < elements[i - 1].right), clipped: elements.some((element) => element.clipped) };
+      });
+      assert.deepEqual(layout, { centered: true, levelLeft: true, actionsRight: true, inside: true, aligned: true, overlap: false, clipped: false }, `${viewport.width}x${viewport.height}, mode ${index}`);
+    }
+  }
+});
+
+test('play-on errors offer retry only and cannot revive an error or disposed game', async (t) => {
+  const page = await pageFor(t);
+  const result = await page.evaluate(async () => {
+    const errors = [];
+    const game = window.fixture.createGame({ failure: { type: 'hearts' }, onError: (error) => errors.push(error.message), levels: [{ setup() {
+      return { onPlayOn() { throw new Error('continue broke'); } };
+    } }] });
+    await game.ready;
+    game.fail();
+    const continued = game.playOn();
+    const status = game.state.status;
+    const again = game.playOn();
+    const visible = [...document.querySelectorAll('.meshpad-panel button')].filter((button) => button.offsetParent !== null).map((button) => button.textContent);
+    game.dispose();
+    return { continued, status, again, visible, errors, disposed: game.playOn() };
+  });
+  assert.deepEqual(result, { continued: false, status: 'error', again: false, visible: ['Retry'], errors: ['continue broke'], disposed: false });
+});
+
+test('opening the levels list during async setup keeps the timer paused after setup completes', async (t) => {
+  const page = await pageFor(t);
+  await page.evaluate(async () => {
+    window.game = window.fixture.createGame({ failure: { type: 'time', seconds: 30 }, levels: [{ async setup() {
+      await new Promise((resolve) => { window.finishSetup = resolve; });
+    } }] });
+    await Promise.resolve();
+  });
+  await page.locator('[data-action="levels"]').click();
+  await page.evaluate(async () => { window.finishSetup(); await window.game.ready; window.game.step(5); });
+  assert.equal(await page.evaluate(() => window.game.state.status), 'paused');
+  assert.equal(await page.evaluate(() => window.game.state.failure.remaining), 30);
+  await page.keyboard.press('Escape');
+  assert.equal(await page.evaluate(() => window.game.state.status), 'playing');
+});
+
+test('level dropdown shows scrollable rows with difficulties and reveals the current selection', async (t) => {
+  const page = await pageFor(t);
+  await page.evaluate(async () => {
+    window.game = window.fixture.createGame({ levels: Array.from({ length: 40 }, (_, index) => ({
+      name: `Puzzle ${index + 1}`,
+      difficulty: [undefined, 'hard', 'very-hard', 'ultra-hard'][index % 4],
+      setup() {},
+    })) });
+    await window.game.ready;
+  });
+  const chooser = page.getByRole('button', { name: 'Level 1, choose level', exact: true });
+  assert.equal(await chooser.getAttribute('aria-expanded'), 'false');
+  await chooser.click();
+  assert.equal(await page.locator('[data-action="levels"]').getAttribute('aria-expanded'), 'true');
+  assert.deepEqual(await page.locator('.meshpad-difficulty').allTextContents(), Array.from({ length: 40 }, (_, i) => ['Normal', 'Hard', 'Very hard', 'Ultra hard'][i % 4]));
+  assert.equal(await page.locator('.meshpad-levels button').first().getAttribute('aria-describedby'), await page.locator('.meshpad-difficulty').first().getAttribute('id'));
+  assert.equal(await page.locator('.meshpad-levels').evaluate((list) => list.scrollHeight > list.clientHeight && getComputedStyle(list).overflowY === 'auto'), true);
+  const last = page.getByRole('button', { name: 'Level 40: Puzzle 40', exact: true });
+  await last.focus();
+  assert.ok(await page.locator('.meshpad-levels').evaluate((list) => list.scrollTop) > 0);
+  await last.click();
+  await page.waitForFunction(() => window.game.state.index === 39 && window.game.state.status === 'playing');
+  assert.equal(await page.getByRole('button', { name: 'Level 40, choose level', exact: true }).isVisible(), true);
+  await page.locator('[data-action="levels"]').click();
+  assert.equal(await page.locator('.meshpad-levels [aria-current]').getAttribute('aria-label'), 'Level 40: Puzzle 40');
+  assert.equal(await page.locator('.meshpad-levels [aria-current]').evaluate((button) => {
+    const row = button.getBoundingClientRect();
+    const list = button.parentElement.getBoundingClientRect();
+    return row.top >= list.top && row.bottom <= list.bottom;
+  }), true);
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('[data-action="levels"]').getAttribute('aria-expanded'), 'false');
+  assert.equal(await page.locator('[data-action="levels"]').evaluate((button) => document.activeElement === button), true);
+});
+
+test('unsupported difficulties fail before creating a game', async (t) => {
+  const page = await pageFor(t);
+  const result = await page.evaluate(() => {
+    let message;
+    try { window.fixture.createGame({ levels: [{ difficulty: 'extreme', setup() {} }] }); }
+    catch (error) { message = error.message; }
+    return { message, stages: document.querySelectorAll('.meshpad-stage').length };
+  });
+  assert.match(result.message, /difficulty must be normal, hard, very-hard, or ultra-hard/);
+  assert.equal(result.stages, 0);
 });

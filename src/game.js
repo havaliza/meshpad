@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createHUD } from './hud.js';
 import { disposeScene } from './dispose.js';
+import { createFailure } from './failure.js';
 
 /** Create a mobile-first game. Every level gets its own scene and lifetime. */
 export function createGame(options = {}) {
@@ -8,8 +9,13 @@ export function createGame(options = {}) {
   if (!Array.isArray(levels) || levels.length === 0 || levels.some((level) => typeof level?.setup !== 'function')) {
     throw new TypeError('Provide at least one level with a setup(context) function.');
   }
+  if (levels.some((level) => level.difficulty !== undefined && !['normal', 'hard', 'very-hard', 'ultra-hard'].includes(level.difficulty))) {
+    throw new TypeError('Level difficulty must be normal, hard, very-hard, or ultra-hard.');
+  }
   const initial = options.initialLevel ?? 0;
   if (!Number.isInteger(initial) || initial < 0 || initial >= levels.length) throw new RangeError('initialLevel is out of range.');
+  const defaultFailure = createFailure(options.failure);
+  const failures = levels.map((level) => level.failure === undefined ? { ...defaultFailure } : createFailure(level.failure));
   const maxPixelRatio = options.maxPixelRatio ?? 2;
   const maxWidth = options.maxWidth ?? 540;
   if (!(Number.isFinite(maxPixelRatio) && maxPixelRatio > 0 && Number.isFinite(maxWidth) && maxWidth > 0)) {
@@ -53,17 +59,31 @@ export function createGame(options = {}) {
   let width = 1;
   let height = 1;
   let manuallyPaused = false;
+  let levelMenuOpen = false;
   let lastError = null;
   const invoke = (callback) => { Promise.resolve().then(callback).catch(() => {}); };
   const hud = createHUD(stage, levels, {
-    previous: () => invoke(() => game.previous()), next: () => invoke(() => game.next()),
+    next: () => invoke(() => game.next()),
     restart: () => invoke(() => game.restart()),
+    playOn: () => game.playOn(),
+    loadLevel: (index) => invoke(() => game.loadLevel(index)),
+    openLevels() {
+      levelMenuOpen = true;
+      if (status === 'playing') status = 'paused';
+      stopLoop();
+    },
+    closeLevels() {
+      levelMenuOpen = false;
+      if (status === 'paused' && !manuallyPaused) status = 'playing';
+      startLoop();
+    },
   });
   const isCurrent = (session) => Boolean(session) && !disposed && current === session && !session.controller.signal.aborted;
   const report = (error, session = current) => {
     if (!isCurrent(session)) return;
     lastError = error instanceof Error ? error : new Error(String(error));
     status = 'error';
+    levelMenuOpen = false;
     stopLoop();
     hud.result('error');
     options.onError?.(lastError);
@@ -80,6 +100,13 @@ export function createGame(options = {}) {
     if (status !== 'playing') return;
     elapsed += dt;
     try { current.hooks?.update?.(dt, elapsed); } catch (error) { report(error); }
+    if (status === 'playing' && current.failure.type === 'time') {
+      current.failure.remaining = Math.max(0, current.failure.remaining - dt);
+      // Absorb floating point residue from fixed simulation substeps.
+      if (current.failure.remaining < 1e-9) current.failure.remaining = 0;
+      hud.resource(current.failure);
+      if (current.failure.remaining === 0) finish(current, 'failed');
+    }
   };
   function stopLoop() { cancelAnimationFrame(frame); frame = 0; previousTime = undefined; }
   const shouldRun = () => !capture && !disposed && !contextLost && !document.hidden && !manuallyPaused && status === 'playing';
@@ -96,8 +123,16 @@ export function createGame(options = {}) {
   const finish = (session, outcome) => {
     if (!isCurrent(session) || !['playing', 'paused'].includes(status)) return false;
     status = outcome;
+    levelMenuOpen = false;
     stopLoop();
-    hud.result(outcome);
+    hud.result(outcome, session.failure);
+    return true;
+  };
+  const consume = (session, type) => {
+    if (!isCurrent(session) || status !== 'playing' || session.failure.type !== type) return false;
+    session.failure.remaining = Math.max(0, session.failure.remaining - 1);
+    hud.resource(session.failure);
+    if (session.failure.remaining === 0) finish(session, 'failed');
     return true;
   };
   const resize = () => {
@@ -153,16 +188,20 @@ export function createGame(options = {}) {
     const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 200);
     camera.position.set(5, 6, 9);
     camera.lookAt(0, 0, 0);
-    const session = { index, scene, camera, autoResizeCamera: true, controller: new AbortController(), hooks: null };
+    const session = { index, scene, camera, failure: { ...failures[index] }, autoResizeCamera: true, controller: new AbortController(), hooks: null };
     current = session;
     status = 'loading'; elapsed = 0; lastError = null;
-    hud.reset(index);
+    levelMenuOpen = false;
+    hud.reset(index, session.failure);
     const context = {
       scene, camera, renderer, level: levels[index], index,
       signal: session.controller.signal,
       get width() { return width; }, get height() { return height; },
+      get failure() { return Object.freeze({ ...session.failure }); },
       win: () => finish(session, 'won'),
       fail: () => finish(session, 'failed'),
+      mistake: () => consume(session, 'hearts'),
+      move: () => consume(session, 'moves'),
     };
     try {
       const hooks = await levels[index].setup(context);
@@ -173,7 +212,7 @@ export function createGame(options = {}) {
       }
       session.camera = session.hooks.camera ?? camera;
       session.autoResizeCamera = session.hooks.autoResizeCamera ?? !session.hooks.camera;
-      status = manuallyPaused ? 'paused' : 'playing';
+      status = manuallyPaused || levelMenuOpen ? 'paused' : 'playing';
       resize();
       startLoop();
       return true;
@@ -188,7 +227,9 @@ export function createGame(options = {}) {
     renderer,
     get scene() { return current?.scene; },
     get camera() { return current?.camera; },
-    get state() { return Object.freeze({ status, index: current?.index ?? initial, elapsed, error: lastError }); },
+    get state() { return Object.freeze({ status, index: current?.index ?? initial, elapsed, error: lastError,
+      failure: Object.freeze({ ...(current?.failure ?? failures[initial]) }),
+    }); },
     debug: () => isCurrent(current) ? current.hooks?.debug?.() ?? null : null,
     loadLevel,
     restart: () => loadLevel(current?.index ?? initial),
@@ -196,8 +237,22 @@ export function createGame(options = {}) {
     previous: () => loadLevel(Math.max((current?.index ?? initial) - 1, 0)),
     win: () => finish(current, 'won'),
     fail: () => finish(current, 'failed'),
+    mistake: () => consume(current, 'hearts'),
+    move: () => consume(current, 'moves'),
+    playOn() {
+      if (!isCurrent(current) || status !== 'failed' || current.failure.type === 'default') return false;
+      const failure = current.failure;
+      failure.remaining = failure.type === 'hearts' ? failure.initial : failure.remaining + failure.playOnAmount;
+      status = manuallyPaused ? 'paused' : 'playing';
+      hud.resource(failure);
+      hud.hideResult();
+      try { current.hooks?.onPlayOn?.(); } catch (error) { report(error); return false; }
+      draw();
+      startLoop();
+      return true;
+    },
     pause() { manuallyPaused = true; if (status === 'playing') status = 'paused'; stopLoop(); },
-    resume() { manuallyPaused = false; if (status === 'paused') status = 'playing'; startLoop(); },
+    resume() { manuallyPaused = false; if (status === 'paused' && !levelMenuOpen) status = 'playing'; startLoop(); },
     step(seconds = 1 / 60) {
       if (!Number.isFinite(seconds) || seconds < 0 || seconds > 60) throw new RangeError('step seconds must be between 0 and 60.');
       if (disposed) throw new Error('This game has been disposed.');

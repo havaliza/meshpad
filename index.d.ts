@@ -12,6 +12,8 @@ export interface GamePointer {
 }
 
 export interface LevelHooks {
+  /** Runs after play on restores the resource, without setting up the level again. */
+  onPlayOn?(): void;
   /** Replace the default camera. Custom cameras own their projection by default. */
   camera?: Three.Camera;
   /** Automatically update a perspective camera's aspect on resize. */
@@ -40,17 +42,45 @@ export interface LevelContext {
   signal: AbortSignal;
   readonly width: number;
   readonly height: number;
+  readonly failure: Readonly<FailureState>;
   win(): boolean;
+  /** Fail immediately, regardless of the configured mode. */
   fail(): boolean;
+  /** Lose one heart. Ignored outside hearts mode or active play. */
+  mistake(): boolean;
+  /** Spend one move. Check for a win before spending the final move. */
+  move(): boolean;
 }
+
+export type FailureMode =
+  | { type: 'default' }
+  | { type: 'hearts'; hearts?: 3 | 4 | 5 }
+  | { type: 'time'; seconds: number; playOnSeconds?: number }
+  | { type: 'moves'; moves: number; playOnMoves?: number };
+
+export interface FailureState {
+  readonly type: FailureMode['type'];
+  /** Null in default mode; seconds may be fractional. */
+  readonly remaining: number | null;
+  readonly initial: number | null;
+  readonly playOnAmount: number | null;
+}
+
+export type LevelDifficulty = 'normal' | 'hard' | 'very-hard' | 'ultra-hard';
 
 export interface Level {
   name?: string;
+  /** Displayed in the level chooser. Defaults to normal. */
+  difficulty?: LevelDifficulty;
+  /** Overrides the game's failure mode for this level. */
+  failure?: FailureMode;
   setup(context: LevelContext): LevelHooks | void | Promise<LevelHooks | void>;
 }
 
 export interface GameOptions {
   levels: Level[];
+  /** Defaults to { type: 'default' }, with retry and no play on. */
+  failure?: FailureMode;
   title?: string;
   /** Element or selector. Defaults to document.body. */
   root?: HTMLElement | string;
@@ -70,6 +100,7 @@ export interface GameState {
   readonly index: number;
   readonly elapsed: number;
   readonly error: Error | null;
+  readonly failure: Readonly<FailureState>;
 }
 
 export interface Game {
@@ -88,6 +119,10 @@ export interface Game {
   previous(): Promise<boolean>;
   win(): boolean;
   fail(): boolean;
+  mistake(): boolean;
+  move(): boolean;
+  /** Continue a failed non-default level, preserving its scene and elapsed time. */
+  playOn(): boolean;
   pause(): void;
   resume(): void;
   /** Advance up to 60 seconds in fixed substeps, then draw. */

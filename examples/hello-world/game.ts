@@ -2,6 +2,7 @@ import { createGame, THREE, type LevelContext, type LevelHooks } from 'meshpad';
 
 createGame({
   title: 'Hello, world',
+  failure: { type: 'time', seconds: 20 },
   levels: [
     { name: 'Hello, world', setup: (context) => createLevel(context, 3, 0xf9c203) },
     { name: 'A little quicker', setup: (context) => createLevel(context, 5, 0xf02b1f) },
@@ -10,10 +11,11 @@ createGame({
 });
 
 function createLevel(
-  { scene, camera, win, fail }: LevelContext,
+  context: LevelContext,
   target: number,
   color: THREE.ColorRepresentation,
 ): LevelHooks {
+  const { scene, camera, win } = context;
   camera.position.set(4.8, 5.2, 8);
   camera.lookAt(0, 0.35, 0);
 
@@ -45,18 +47,15 @@ function createLevel(
   scene.fog = new THREE.Fog(0x221e4e, 12, 28);
 
   let taps = 0;
-  let timeLeft = 20;
   let spin = 0;
 
   return {
-    debug: () => ({ taps, target, timeLeft }),
+    debug: () => ({ taps, target, timeLeft: context.failure.remaining }),
     update(dt, elapsed) {
-      timeLeft = Math.max(0, timeLeft - dt);
       cube.rotation.y += dt * (0.3 + spin);
       cube.rotation.z = Math.sin(elapsed * 0.7) * 0.08;
       cube.position.y = 0.35 + Math.sin(elapsed * 1.8) * 0.12;
       spin *= Math.exp(-dt * 3);
-      if (timeLeft === 0) fail();
     },
     pointer({ type, hits }) {
       if (type !== 'pointerdown' || hits([cube]).length === 0) return;
